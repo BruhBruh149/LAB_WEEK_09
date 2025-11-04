@@ -25,6 +25,9 @@ import com.example.lab_week_09.ui.theme.LAB_WEEK_09Theme
 import com.example.lab_week_09.ui.theme.OnBackgroundItemText
 import com.example.lab_week_09.ui.theme.OnBackgroundTitleText
 import com.example.lab_week_09.ui.theme.PrimaryTextButton
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.Types
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,10 +45,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
 data class Student(
     var name: String
 )
+private val moshi: Moshi = Moshi.Builder()
+    .add(KotlinJsonAdapterFactory())
+    .build()
+
 var sharedStudentData = ""
+var sharedStudentJson = ""
+
 @Composable
 fun SimpleApp(navController: NavHostController) {
     NavHost(
@@ -54,19 +64,21 @@ fun SimpleApp(navController: NavHostController) {
     ) {
         composable("home") {
             SimpleHome(
-                onNavigate = { data ->
+                onNavigate = { data, jsonData ->
                     sharedStudentData = data
+                    sharedStudentJson = jsonData
                     navController.navigate("result")
                 }
             )
         }
         composable("result") {
-            SimpleResultContent(data = sharedStudentData)
+            SimpleResultContent(data = sharedStudentData, jsonData = sharedStudentJson)
         }
     }
 }
+
 @Composable
-fun SimpleHome(onNavigate: (String) -> Unit) {
+fun SimpleHome(onNavigate: (String, String) -> Unit) {
     val listData = remember {
         mutableStateListOf(
             Student("Tanu"),
@@ -88,7 +100,8 @@ fun SimpleHome(onNavigate: (String) -> Unit) {
             onValueChange = { newText ->
                 inputField.value = inputField.value.copy(name = newText)
             },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+            placeholder = { OnBackgroundItemText(text = "Enter student name") }
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -96,25 +109,31 @@ fun SimpleHome(onNavigate: (String) -> Unit) {
         Row {
             PrimaryTextButton(text = stringResource(id = R.string.button_click)) {
                 val trimmedName = inputField.value.name.trim()
-                if (trimmedName.isNotBlank()) {
+                if (trimmedName.isNotEmpty() && trimmedName.isNotBlank()) {
                     listData.add(Student(trimmedName))
-                    inputField.value = Student("") // reset input
+                    inputField.value = Student("")
                 }
             }
             Spacer(modifier = Modifier.width(8.dp))
             PrimaryTextButton(text = stringResource(id = R.string.button_navigate)) {
-                onNavigate(listData.toString()) // pindah ke ResultContent
+                val jsonData = convertToJson(listData)
+                onNavigate(listData.toString(), jsonData)
             }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
+        OnBackgroundItemText(text = "Total Students: ${listData.size}")
 
-        LazyColumn {
+        Spacer(modifier = Modifier.height(8.dp))
+
+        LazyColumn(
+            modifier = Modifier.weight(1f)
+        ) {
             items(listData) { student ->
                 Column(
                     modifier = Modifier
                         .padding(vertical = 4.dp)
-                        .fillMaxSize(),
+                        .fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     OnBackgroundItemText(text = student.name)
@@ -125,7 +144,7 @@ fun SimpleHome(onNavigate: (String) -> Unit) {
 }
 
 @Composable
-fun SimpleResultContent(data: String) {
+fun SimpleResultContent(data: String, jsonData: String) {
     Column(
         modifier = Modifier
             .padding(16.dp)
@@ -133,15 +152,62 @@ fun SimpleResultContent(data: String) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         OnBackgroundTitleText(text = "RESULT CONTENT")
-        OnBackgroundItemText(text = "Data from Home:")
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OnBackgroundTitleText(text = "Original Data:")
         OnBackgroundItemText(text = data)
+
+        Spacer(modifier = Modifier.height(24.dp))
+        OnBackgroundTitleText(text = "JSON Data (Moshi):")
+        OnBackgroundItemText(text = jsonData)
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        OnBackgroundTitleText(text = "Parsed from JSON:")
+        val parsedList = parseFromJson(jsonData)
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
+            items(parsedList) { student ->
+                Column(
+                    modifier = Modifier
+                        .padding(vertical = 4.dp)
+                        .fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    OnBackgroundItemText(text = "• ${student.name}")
+                }
+            }
+        }
     }
 }
+private fun convertToJson(studentList: List<Student>): String {
+    return try {
+        val type = Types.newParameterizedType(List::class.java, Student::class.java)
+        val adapter = moshi.adapter<List<Student>>(type)
+        adapter.toJson(studentList) ?: "[]"
+    } catch (e: Exception) {
+        "[]"
+    }
+}
+private fun parseFromJson(json: String): List<Student> {
+    return try {
+        val type = Types.newParameterizedType(List::class.java, Student::class.java)
+        val adapter = moshi.adapter<List<Student>>(type)
+        adapter.fromJson(json) ?: emptyList()
+    } catch (e: Exception) {
+        emptyList()
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 fun PreviewSimpleHome() {
     LAB_WEEK_09Theme {
-        SimpleHome(onNavigate = { })
+        SimpleHome(onNavigate = { _, _ -> })
     }
 }
 
@@ -150,7 +216,8 @@ fun PreviewSimpleHome() {
 fun PreviewSimpleResultContent() {
     LAB_WEEK_09Theme {
         SimpleResultContent(
-            data = "[Student(name=Tanu), Student(name=Tina), Student(name=Tono)]"
+            data = "[Student(name=Tanu), Student(name=Tina), Student(name=Tono)]",
+            jsonData = "[{\"name\":\"Tanu\"},{\"name\":\"Tina\"},{\"name\":\"Tono\"}]"
         )
     }
 }
